@@ -26,23 +26,27 @@ public class ProducerEvents implements InitializingBean {
 	private String streamName = "inputStream";
 	
 	@Override
-	public void afterPropertiesSet() throws Exception {
-		Thread.sleep(10000);
+	public void afterPropertiesSet() throws StratioStreamingException {
 		IStratioStreamingAPI api = getApi();
 		
-		if(!api.listStreams().contains(streamName))
-		{
-			ColumnNameType firstStreamColumn= new ColumnNameType("name", ColumnType.STRING);
-			ColumnNameType secondStreamColumn = new ColumnNameType("data", ColumnType.DOUBLE);
-			List<ColumnNameType> columnList = Arrays.asList(firstStreamColumn, secondStreamColumn);
-			api.createStream(streamName, columnList);
-			
-			api.addQuery(streamName, "from inputStream#window.time(1 min) select name, avg(data) as average group by name insert into medias_1");
-			api.addQuery("medias_1", "from medias_1[average > 90 and name=='fail'] insert into alarms_1");
-			
-			api.listenStream("alarms_1");
-		}
-		
+		api.listStreams().stream().
+			filter(s -> s.getStreamName().equals(streamName)).
+			findFirst().orElseGet(() -> {
+				ColumnNameType firstStreamColumn= new ColumnNameType("name", ColumnType.STRING);
+				ColumnNameType secondStreamColumn = new ColumnNameType("data", ColumnType.DOUBLE);
+				List<ColumnNameType> columnList = Arrays.asList(firstStreamColumn, secondStreamColumn);
+				try {				
+					api.createStream(streamName, columnList);
+					api.addQuery(streamName, "from inputStream#window.time(1 min) select name, avg(data) as average group by name insert into medias_1");
+					api.addQuery("medias_1", "from medias_1[average > 90 and name=='fail'] insert into alarms_1");
+					api.listenStream("alarms_1");
+					return null;
+				}
+				catch(StratioStreamingException e) {
+					return null;
+				}
+			});
+				
 		new Thread(() -> {
 			List<String> names = Arrays.asList("ok", "fail", "warn");
 			while (true) {
